@@ -1,0 +1,14 @@
+[project]
+name = "dotani-speedup-plots"
+version = "0.1.0"
+description = "Generate dotANI CPU vs CUDA speedup plots from metrics TSV files."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "matplotlib>=3.8",
+  "pandas>=2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

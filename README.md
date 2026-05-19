@@ -1,7 +1,7 @@
 # dotANI Speedup Plots
 
-Generate optimization-stage speedup plots from the 2026-05-14 dotANI metrics
-capture in `../dotani_outputs_server/5_14/metrics_5_14.md`.
+Generate optimization-stage speedup plots from the 3x and 4x multi-GPU dotANI
+metrics captures.
 
 ## Quickstart
 
@@ -9,18 +9,43 @@ capture in `../dotani_outputs_server/5_14/metrics_5_14.md`.
 python3 -m dotani_speedup_plots --out figures
 ```
 
-The default input is:
+The default inputs are:
 
 ```sh
 ../dotani_outputs_server/5_14/metrics_5_14.md
+../dotani_outputs_server/5_18/
 ```
 
-Use `--metrics` to point at another markdown file with the same `##` section and
-`*_s value` metric format.
+Use `--metrics` to point at another 3x markdown file with the same `##` section
+and `*_s value` metric format. Use `--metrics-4x-dir` to point at another
+directory containing the 4x summary TSV files.
+
+Use `--legacy` to regenerate the original ungrouped 3x-only figure set.
 
 ## Generated Figures
 
-The output is split by baseline.
+The default output is split by GPU count and baseline.
+
+`3x_gpu/` contains multi-GPU charts from
+`../dotani_outputs_server/5_14/metrics_5_14.md`:
+
+- `gpu_hd_encode_baseline/multi_gpu_speedup.png`: wall-clock time across the
+  3x multi-GPU optimization stages, annotated with speedup versus 3x hashset.
+- `gpu_hd_encode_baseline/multi_gpu_stage_speedups.png`: per-stage speedup
+  heatmap for the 3x multi-GPU progression.
+- `cpu_hd_encode_baseline/multi_gpu_speedup.png`: wall-clock time with a
+  synthetic 110-minute CPU HD encode ETA baseline prepended.
+
+`4x_gpu/` contains multi-GPU charts from the 2026-05-18 summary TSV files:
+
+- `gpu_hd_encode_baseline/multi_gpu_speedup.png`: wall-clock time across the
+  4x multi-GPU optimization stages, annotated with speedup versus 4x hashset.
+- `gpu_hd_encode_baseline/multi_gpu_stage_speedups.png`: per-stage speedup
+  heatmap for the 4x multi-GPU progression.
+- `cpu_hd_encode_baseline/multi_gpu_speedup.png`: wall-clock time with the same
+  synthetic 110-minute CPU HD encode ETA baseline prepended.
+
+The original ungrouped output is still available with `--legacy`.
 
 `gpu_hd_encode_baseline/` contains measured-stage plots from `metrics_5_14.md`:
 
@@ -57,6 +82,8 @@ Stage timings are host-observed counters and are not additive wall-clock totals.
   300W TDP.
 
 Multi-GPU runs used 3 GPUs; 1 GPU was busy.
+
+The 2026-05-18 4x multi-GPU runs used all 4 GPUs.
 
 ## Tests
 

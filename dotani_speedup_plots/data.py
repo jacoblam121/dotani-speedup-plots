@@ -41,6 +41,27 @@ STAGE_COLUMNS = {
 
 CPU_HD_ENCODE_ETA_S = 110 * 60
 
+SUMMARY_TSV_COLUMNS = {
+    "wall_s": "sketch_wall_ns",
+    "fasta_s": "fasta_ns",
+    "dedup_s": "hash_and_dedup_ns",
+    "hd_encode_s": "hd_encode_ns",
+    "hv_norm_s": "hv_norm_ns",
+    "compress_s": "hd_compress_ns",
+    "worker_total_s": "total_worker_ns",
+    "cuda_h2d_s": "cuda_h2d_ns",
+    "cuda_alloc_s": "cuda_alloc_ns",
+    "cuda_kmer_launch_s": "cuda_launch_ns",
+    "cuda_d2h_s": "cuda_d2h_ns",
+    "cuda_zero_filter_s": "cuda_zero_filter_ns",
+    "cuda_filter_s": "cuda_filter_ns",
+    "cuda_hd_hash_h2d_s": "cuda_hd_hash_h2d_ns",
+    "cuda_hd_hv_h2d_s": "cuda_hd_hv_h2d_ns",
+    "cuda_hd_alloc_s": "cuda_hd_alloc_ns",
+    "cuda_hd_kernel_s": "cuda_hd_kernel_launch_ns",
+    "cuda_hd_d2h_s": "cuda_hd_d2h_ns",
+}
+
 
 @dataclass(frozen=True)
 class MetricRun:
@@ -50,6 +71,15 @@ class MetricRun:
     stage_id: str
     stage_label: str
     metrics: dict[str, float]
+
+
+@dataclass(frozen=True)
+class SummaryRunSpec:
+    path: Path
+    section: str
+    family: str
+    stage_id: str
+    stage_label: str
 
 
 def parse_metrics_markdown(path: Path) -> pd.DataFrame:
@@ -122,6 +152,43 @@ def parse_metrics_markdown(path: Path) -> pd.DataFrame:
     return df.sort_values(["family", "stage_id", "run_index"], kind="stable").reset_index(
         drop=True
     )
+
+
+def parse_metrics_summary_tsv(path: Path) -> dict[str, float]:
+    if not path.exists():
+        raise FileNotFoundError(f"Metrics summary TSV not found: {path}")
+
+    df = pd.read_csv(path, sep="\t")
+    total = df[df["file"] == "TOTAL"]
+    if total.empty:
+        raise ValueError(f"No TOTAL row found in {path}")
+
+    row = total.iloc[0]
+    metrics = {}
+    for metric_name, column in SUMMARY_TSV_COLUMNS.items():
+        if column not in row:
+            raise ValueError(f"Missing column {column!r} in {path}")
+        metrics[metric_name] = float(row[column]) / 1e9
+    return metrics
+
+
+def load_summary_tsv_runs(specs: list[SummaryRunSpec]) -> pd.DataFrame:
+    records = []
+    for run_index, spec in enumerate(specs, start=1):
+        record = {
+            "section": spec.section,
+            "run_index": run_index,
+            "family": spec.family,
+            "stage_id": spec.stage_id,
+            "stage_label": spec.stage_label,
+        }
+        record.update(parse_metrics_summary_tsv(spec.path))
+        records.append(record)
+
+    if not records:
+        raise ValueError("No metrics summary TSV run specs provided")
+
+    return pd.DataFrame(records)
 
 
 def classify_section(section: str) -> tuple[str, str, str]:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dotani_speedup_plots.plots import generate_plots
+from dotani_speedup_plots.plots import generate_gpu_count_plots, generate_plots
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -22,3 +22,18 @@ def test_generate_plots_writes_expected_files(tmp_path: Path) -> None:
     }
     assert all(path.exists() for path in outputs)
     assert len(summary) == 16
+
+
+def test_generate_gpu_count_plots_writes_grouped_multi_gpu_files(tmp_path: Path) -> None:
+    outputs, summary = generate_gpu_count_plots(tmp_path)
+
+    assert {path.relative_to(tmp_path).as_posix() for path in outputs} == {
+        "3x_gpu/gpu_hd_encode_baseline/multi_gpu_speedup.png",
+        "3x_gpu/gpu_hd_encode_baseline/multi_gpu_stage_speedups.png",
+        "3x_gpu/cpu_hd_encode_baseline/multi_gpu_speedup.png",
+        "4x_gpu/gpu_hd_encode_baseline/multi_gpu_speedup.png",
+        "4x_gpu/gpu_hd_encode_baseline/multi_gpu_stage_speedups.png",
+        "4x_gpu/cpu_hd_encode_baseline/multi_gpu_speedup.png",
+    }
+    assert all(path.exists() for path in outputs)
+    assert len(summary) == 18

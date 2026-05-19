@@ -6,7 +6,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .data import STAGE_COLUMNS, load_metrics, prepend_cpu_hd_encode_eta
+from .data import (
+    STAGE_COLUMNS,
+    SummaryRunSpec,
+    aggregate_family_runs,
+    compute_family_speedups,
+    compute_stage_speedups,
+    load_metrics,
+    load_summary_tsv_runs,
+    prepend_cpu_hd_encode_eta,
+)
 
 
 FIGSIZE_WALL_TIME = (11.0, 6.0)
@@ -17,7 +26,12 @@ SYSTEM_SPECS = (
     "Memory: 8x 96GB DDR5-6400 ECC (768GB)\n"
     "GPU: 4x NVIDIA RTX PRO 6000 Blackwell 96GB GDDR7 Max-Q, 300W TDP"
 )
-MULTI_GPU_NOTE = "Multi-GPU runs used 3 GPUs; 1 GPU was busy."
+DEFAULT_3X_METRICS_PATH = Path("../dotani_outputs_server/5_14/metrics_5_14.md")
+DEFAULT_4X_METRICS_DIR = Path("../dotani_outputs_server/5_18")
+MULTI_GPU_NOTES = {
+    "3x_gpu": "Multi-GPU runs used 3 GPUs; 1 GPU was busy.",
+    "4x_gpu": "Multi-GPU runs used 4 GPUs.",
+}
 COLORS = {
     "multi": "#2f6f9f",
     "single": "#c65d3a",
@@ -29,6 +43,40 @@ FAMILY_TITLES = {
     "multi": "Multi-GPU Optimization Progression",
     "single": "Single-GPU Optimization Progression",
 }
+
+
+def default_4x_run_specs(metrics_dir: Path = DEFAULT_4X_METRICS_DIR) -> list[SummaryRunSpec]:
+    return [
+        SummaryRunSpec(
+            path=metrics_dir / "full_4x_multi_gpu_hashset_20260518_174458_metrics.summary.tsv",
+            section="4x Multi (hashset)",
+            family="multi",
+            stage_id="multi_hashset",
+            stage_label="Hashset",
+        ),
+        SummaryRunSpec(
+            path=metrics_dir / "full_4x_multi_gpu_sort_unstable_20260518_175646_metrics.summary.tsv",
+            section="4x Multi (sort unstable)",
+            family="multi",
+            stage_id="multi_sort",
+            stage_label="sort_unstable",
+        ),
+        SummaryRunSpec(
+            path=metrics_dir
+            / "full_4x_multi_gpu_sort_scratchreuse_20260518_180752_metrics.summary.tsv",
+            section="4x Multi (sort unstable, scratch reuse)",
+            family="multi",
+            stage_id="multi_sort_scratchreuse",
+            stage_label="sort_unstable + scratch reuse",
+        ),
+        SummaryRunSpec(
+            path=metrics_dir / "4x_multi_gpu_test_20260518_173112_metrics.summary.tsv",
+            section="4x Multi (sort unstable, scratch reuse, copy removal)",
+            family="multi",
+            stage_id="multi_sort_scratchreuse_copy",
+            stage_label="sort_unstable + scratch reuse + copy removal",
+        ),
+    ]
 
 
 def generate_plots(
@@ -56,8 +104,87 @@ def generate_plots(
     return outputs, summary
 
 
+def generate_gpu_count_plots(
+    out_dir: Path,
+    output_format: str = "png",
+    metrics_3x_path: Path = DEFAULT_3X_METRICS_PATH,
+    metrics_4x_dir: Path = DEFAULT_4X_METRICS_DIR,
+) -> tuple[list[Path], list[dict[str, float | int | str]]]:
+    outputs: list[Path] = []
+    summary: list[dict[str, float | int | str]] = []
+
+    _aggregated_3x, wall_speedups_3x, stage_speedups_3x = load_metrics(metrics_3x_path)
+    outputs_3x, summary_3x = generate_multi_gpu_plot_set(
+        wall_speedups=wall_speedups_3x,
+        stage_speedups=stage_speedups_3x,
+        out_dir=out_dir / "3x_gpu",
+        output_format=output_format,
+        dataset_label="3x_gpu",
+    )
+    outputs.extend(outputs_3x)
+    summary.extend(summary_3x)
+
+    raw_4x = load_summary_tsv_runs(default_4x_run_specs(metrics_4x_dir))
+    aggregated_4x = aggregate_family_runs(raw_4x)
+    wall_speedups_4x = compute_family_speedups(aggregated_4x)
+    stage_speedups_4x = compute_stage_speedups(aggregated_4x)
+    outputs_4x, summary_4x = generate_multi_gpu_plot_set(
+        wall_speedups=wall_speedups_4x,
+        stage_speedups=stage_speedups_4x,
+        out_dir=out_dir / "4x_gpu",
+        output_format=output_format,
+        dataset_label="4x_gpu",
+    )
+    outputs.extend(outputs_4x)
+    summary.extend(summary_4x)
+
+    return outputs, summary
+
+
+def generate_multi_gpu_plot_set(
+    wall_speedups: pd.DataFrame,
+    stage_speedups: pd.DataFrame,
+    out_dir: Path,
+    output_format: str,
+    dataset_label: str,
+) -> tuple[list[Path], list[dict[str, float | int | str]]]:
+    gpu_hd_dir = out_dir / "gpu_hd_encode_baseline"
+    cpu_hd_dir = out_dir / "cpu_hd_encode_baseline"
+    gpu_hd_dir.mkdir(parents=True, exist_ok=True)
+    cpu_hd_dir.mkdir(parents=True, exist_ok=True)
+
+    cpu_hd_speedups = prepend_cpu_hd_encode_eta(wall_speedups)
+    outputs = [
+        plot_family_wall_time(
+            wall_speedups, "multi", gpu_hd_dir, output_format, dataset_label=dataset_label
+        ),
+        plot_family_stage_heatmap(
+            stage_speedups, "multi", gpu_hd_dir, output_format, dataset_label=dataset_label
+        ),
+        plot_family_wall_time(
+            cpu_hd_speedups, "multi", cpu_hd_dir, output_format, dataset_label=dataset_label
+        ),
+    ]
+
+    summary = build_summary(
+        f"{dataset_label}/gpu_hd_encode_baseline",
+        wall_speedups[wall_speedups["family"] == "multi"],
+    )
+    summary.extend(
+        build_summary(
+            f"{dataset_label}/cpu_hd_encode_baseline",
+            cpu_hd_speedups[cpu_hd_speedups["family"] == "multi"],
+        )
+    )
+    return outputs, summary
+
+
 def plot_family_wall_time(
-    speedups: pd.DataFrame, family: str, out_dir: Path, output_format: str
+    speedups: pd.DataFrame,
+    family: str,
+    out_dir: Path,
+    output_format: str,
+    dataset_label: str | None = None,
 ) -> Path:
     data = speedups[speedups["family"] == family].sort_values("order")
     if data.empty:
@@ -95,7 +222,10 @@ def plot_family_wall_time(
             },
         )
 
-    ax.set_title(FAMILY_TITLES[family], loc="left", fontsize=15, fontweight="bold")
+    title = FAMILY_TITLES[family]
+    if dataset_label:
+        title = f"{dataset_label.replace('_', ' ')} {title}"
+    ax.set_title(title, loc="left", fontsize=15, fontweight="bold")
     ax.set_ylabel("Wall-clock time (seconds)")
     ax.set_xticks(x, [wrap_label(label) for label in data["stage_label"]])
     ax.tick_params(axis="x", labelrotation=28, pad=8)
@@ -106,14 +236,18 @@ def plot_family_wall_time(
     ax.grid(axis="y", color=COLORS["grid"], linewidth=0.8)
     ax.set_axisbelow(True)
     despine(ax)
-    add_system_specs_note(ax, family)
+    add_system_specs_note(ax, family, dataset_label)
     fig.subplots_adjust(left=0.09, right=0.98, top=0.88, bottom=0.3)
 
     return save_fig(fig, out_dir / f"{family}_gpu_speedup.{output_format}")
 
 
 def plot_family_stage_heatmap(
-    stage_speedups: pd.DataFrame, family: str, out_dir: Path, output_format: str
+    stage_speedups: pd.DataFrame,
+    family: str,
+    out_dir: Path,
+    output_format: str,
+    dataset_label: str | None = None,
 ) -> Path:
     data = stage_speedups[stage_speedups["family"] == family].copy()
     if data.empty:
@@ -145,8 +279,11 @@ def plot_family_stage_heatmap(
         aspect="auto",
     )
 
+    title = FAMILY_TITLES[family]
+    if dataset_label:
+        title = f"{dataset_label.replace('_', ' ')} {title}"
     ax.set_title(
-        f"{FAMILY_TITLES[family]}: Stage Speedups",
+        f"{title}: Stage Speedups",
         loc="left",
         fontsize=15,
         fontweight="bold",
@@ -223,10 +360,13 @@ def wrap_label(value: str) -> str:
     )
 
 
-def add_system_specs_note(ax: plt.Axes, family: str) -> None:
+def add_system_specs_note(
+    ax: plt.Axes, family: str, dataset_label: str | None = None
+) -> None:
     note = f"{SYSTEM_SPECS}"
     if family == "multi":
-        note = f"{note}\n{MULTI_GPU_NOTE}"
+        multi_note = MULTI_GPU_NOTES.get(dataset_label or "", MULTI_GPU_NOTES["3x_gpu"])
+        note = f"{note}\n{multi_note}"
     ax.text(
         0.985,
         0.985,

@@ -7,13 +7,16 @@ import pytest
 from dotani_speedup_plots.data import (
     aggregate_family_runs,
     compute_family_speedups,
+    load_summary_tsv_runs,
     prepend_cpu_hd_encode_eta,
     parse_metrics_markdown,
 )
+from dotani_speedup_plots.plots import default_4x_run_specs
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 METRICS_PATH = REPO_ROOT.parent / "dotani_outputs_server" / "5_14" / "metrics_5_14.md"
+METRICS_4X_DIR = REPO_ROOT.parent / "dotani_outputs_server" / "5_18"
 
 
 def test_parse_metrics_markdown_extracts_all_runs() -> None:
@@ -81,3 +84,38 @@ def test_cpu_hd_encode_eta_baseline_is_prepended() -> None:
     final_single = single[single["stage_id"] == "single_sort_scratchreuse_copy"].iloc[0]
     assert final_multi["wall_speedup"] == pytest.approx(6600.0 / 347.352)
     assert final_single["wall_speedup"] == pytest.approx(6600.0 / 863.578)
+
+
+def test_parse_4x_summary_tsv_runs() -> None:
+    raw = load_summary_tsv_runs(default_4x_run_specs(METRICS_4X_DIR))
+    aggregated = aggregate_family_runs(raw)
+    multi = aggregated[aggregated["family"] == "multi"].sort_values("order")
+
+    assert list(multi["stage_id"]) == [
+        "multi_hashset",
+        "multi_sort",
+        "multi_sort_scratchreuse",
+        "multi_sort_scratchreuse_copy",
+    ]
+    assert multi[multi["stage_id"] == "multi_hashset"].iloc[0]["wall_s"] == pytest.approx(
+        681.241, abs=0.001
+    )
+    assert multi[multi["stage_id"] == "multi_sort"].iloc[0]["wall_s"] == pytest.approx(
+        355.439, abs=0.001
+    )
+    assert multi[multi["stage_id"] == "multi_sort_scratchreuse"].iloc[0][
+        "wall_s"
+    ] == pytest.approx(307.543, abs=0.001)
+    assert multi[multi["stage_id"] == "multi_sort_scratchreuse_copy"].iloc[0][
+        "wall_s"
+    ] == pytest.approx(285.947, abs=0.001)
+
+
+def test_4x_gpu_baseline_speedup_uses_4x_hashset() -> None:
+    raw = load_summary_tsv_runs(default_4x_run_specs(METRICS_4X_DIR))
+    aggregated = aggregate_family_runs(raw)
+    speedups = compute_family_speedups(aggregated)
+
+    final_multi = speedups[speedups["stage_id"] == "multi_sort_scratchreuse_copy"].iloc[0]
+
+    assert final_multi["wall_speedup"] == pytest.approx(681.241 / 285.947, rel=1e-5)
